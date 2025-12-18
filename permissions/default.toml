@@ -1,0 +1,21 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the Media Toolkit plugin - allows all media operations (editing, playback, analysis)"
+permissions = [
+    "allow-select-media-file",
+    "allow-get-media-info",
+    "allow-trim",
+    "allow-convert",
+    "allow-extract-audio",
+    "allow-play",
+    "allow-pause",
+    "allow-resume",
+    "allow-stop",
+    "allow-seek",
+    "allow-get-playback-status",
+    "allow-set-volume",
+    "allow-check-permission",
+    "allow-request-permission",
+    "allow-cleanup-cache",
+]

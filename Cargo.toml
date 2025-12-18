@@ -1,0 +1,30 @@
+[package]
+name = "tauri-plugin-media-toolkit"
+version = "0.1.1"
+authors = ["Affex Team"]
+description = "Comprehensive media toolkit for Tauri: edit, play, convert audio/video files"
+edition = "2021"
+rust-version = "1.77.2"
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-media-toolkit"
+license = "MIT"
+repository = "https://github.com/brenogonzaga/tauri-plugin-media-toolkit"
+homepage = "https://github.com/brenogonzaga/tauri-plugin-media-toolkit"
+documentation = "https://docs.rs/tauri-plugin-media-toolkit"
+keywords = ["tauri", "media", "audio", "video", "converter"]
+categories = [
+    "multimedia",
+    "multimedia::audio",
+    "multimedia::video",
+    "api-bindings",
+]
+
+[dependencies]
+tauri = { version = "2.9.5" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2"
+log = "0.4"
+
+[build-dependencies]
+tauri-plugin = { version = "2.5.2", features = ["build"] }

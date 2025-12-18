@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-extract-audio"
+description = "Enables the extract_audio command without any pre-configured scope."
+commands.allow = ["extract_audio"]
+
+[[permission]]
+identifier = "deny-extract-audio"
+description = "Denies the extract_audio command without any pre-configured scope."
+commands.deny = ["extract_audio"]

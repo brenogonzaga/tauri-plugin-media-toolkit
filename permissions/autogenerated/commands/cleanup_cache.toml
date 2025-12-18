@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-cleanup-cache"
+description = "Enables the cleanup_cache command without any pre-configured scope."
+commands.allow = ["cleanup_cache"]
+
+[[permission]]
+identifier = "deny-cleanup-cache"
+description = "Denies the cleanup_cache command without any pre-configured scope."
+commands.deny = ["cleanup_cache"]
