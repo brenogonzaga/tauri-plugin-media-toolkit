@@ -1,37 +1,4 @@
-import { useState, useEffect, useRef, ChangeEvent } from "react";
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Slider,
-  Stack,
-  TextField,
-  Typography,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  CircularProgress,
-  Alert,
-  Divider,
-  Chip,
-  SelectChangeEvent,
-  Container,
-  Paper,
-  IconButton,
-} from "@mui/material";
-import {
-  MdContentCut,
-  MdSwapHoriz,
-  MdAudiotrack,
-  MdInfo,
-  MdFileOpen,
-  MdPlayArrow,
-  MdPause,
-  MdStop,
-  MdVolumeUp,
-} from "react-icons/md";
+import { useState, useEffect, useRef } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
@@ -49,6 +16,7 @@ import {
   type VideoQuality,
   type PlaybackStatus,
 } from "tauri-plugin-media-toolkit-api";
+import "./App.css";
 
 function formatDuration(ms: number) {
   if (!isFinite(ms) || ms <= 0) return "0:00";
@@ -64,771 +32,483 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function stripExt(p: string) {
+  return p.replace(/\.[^/.]+$/, "");
+}
+
+const Chevron = () => (
+  <svg className="select-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden>
+    <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </svg>
+);
+
 function App() {
   const [file, setFile] = useState<string | null>(null);
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [mediaInfo, setMediaInfo] = useState<MediaInfo | null>(null);
-  const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(
-    null
-  );
+  const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
 
-  // Trim state
   const [startTime, setStartTime] = useState(0);
   const [endTime, setEndTime] = useState(100);
 
-  // Convert state
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("mp4");
   const [audioQuality, setAudioQuality] = useState<AudioQuality>("medium");
   const [videoQuality, setVideoQuality] = useState<VideoQuality>("medium");
-
-  // Volume
   const [volume, setVolume] = useState(1.0);
 
-  // Refs for HTML5 media player
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const statusInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Poll playback status
   useEffect(() => {
     statusInterval.current = setInterval(async () => {
-      try {
-        const status = await getPlaybackStatus();
-        setPlaybackStatus(status);
-      } catch {
-        // Ignore errors
-      }
+      try { setPlaybackStatus(await getPlaybackStatus()); } catch { /* ignore */ }
     }, 500);
-
-    return () => {
-      if (statusInterval.current) {
-        clearInterval(statusInterval.current);
-      }
-    };
+    return () => { if (statusInterval.current) clearInterval(statusInterval.current); };
   }, []);
 
   useEffect(() => {
-    if (mediaInfo) {
-      setEndTime(mediaInfo.duration);
-    }
+    if (mediaInfo) setEndTime(mediaInfo.durationMs);
   }, [mediaInfo]);
+
+  const loadFile = async (path: string) => {
+    setFile(path);
+    const info = await getMediaInfo(path);
+    setMediaInfo(info);
+    setMediaUrl(convertFileSrc(path));
+  };
 
   const handleSelectFile = async () => {
     try {
       setError(null);
       const result = await selectMediaFile();
-      const selectedFile = result.filePath;
-      console.log("Selected file path:", selectedFile);
-      setFile(selectedFile);
-      setSuccess(`Selected file: ${selectedFile}`);
-
-      // Get media info
-      const info = await getMediaInfo(selectedFile);
-      setMediaInfo(info);
-
-      // Set media URL for preview
-      const url = convertFileSrc(selectedFile);
-      console.log("Converted URL for preview:", url);
-      setMediaUrl(url);
+      await loadFile(result.filePath);
     } catch (err) {
       setError(`Failed to select file: ${err}`);
-      console.error(err);
     }
   };
 
   const handleOpenDialog = async () => {
     try {
       setError(null);
-      let selectedFile = await open({
+      let selected = await open({
         multiple: false,
         directory: false,
-        filters: [
-          {
-            name: "Media",
-            extensions: ["mp4", "mp3", "wav", "mov", "avi", "webm"],
-          },
-        ],
+        filters: [{ name: "Media", extensions: ["mp4", "mp3", "wav", "mov", "avi", "webm"] }],
       });
-
-      if (selectedFile) {
-        // For Desktop file paths, remove file:// and decode
-        if (
-          typeof selectedFile === "string" &&
-          selectedFile.startsWith("file://")
-        ) {
-          selectedFile = selectedFile.replace("file://", "");
-        }
-
-        // Decode URI components (handle special characters and spaces)
-        try {
-          selectedFile = decodeURIComponent(selectedFile as string);
-        } catch {
-          // If decoding fails, use the original path
-        }
-
-        console.log("Selected file path:", selectedFile);
-        setFile(selectedFile as string);
-        setSuccess(`Selected file: ${selectedFile}`);
-
-        // Get media info
-        const info = await getMediaInfo(selectedFile as string);
-        setMediaInfo(info);
-
-        // Set media URL for preview
-        const url = convertFileSrc(selectedFile as string);
-        console.log("Converted URL for preview:", url);
-        setMediaUrl(url);
-        setMediaInfo(info);
+      if (!selected) return;
+      if (typeof selected === "string" && selected.startsWith("file://")) {
+        selected = selected.replace("file://", "");
       }
+      try { selected = decodeURIComponent(selected as string); } catch { /* keep original */ }
+      await loadFile(selected as string);
     } catch (err) {
       setError(`Failed to open file: ${err}`);
-      console.error(err);
     }
   };
 
   const handleTrim = async () => {
-    if (!file) {
-      setError("No file selected");
-      return;
-    }
-
+    if (!file || !mediaInfo) return setError("No file selected");
     try {
-      setError(null);
-      setSuccess(null);
-      setProcessing(true);
-
+      setError(null); setSuccess(null); setProcessing(true);
       const outputPath = await save({
-        defaultPath: `trimmed_${Date.now()}.${mediaInfo?.format || "mp4"}`,
-        filters: [
-          {
-            name: "Media",
-            extensions: [mediaInfo?.format || "mp4"],
-          },
-        ],
+        defaultPath: `trimmed_${Date.now()}.${mediaInfo.format}`,
+        filters: [{ name: "Media", extensions: [mediaInfo.format] }],
       });
-
       if (outputPath) {
-        await trim(file, outputPath, startTime, endTime);
-        setSuccess(`Trimmed video saved to: ${outputPath}`);
+        const result = await trim({
+          inputPath: file,
+          outputPath: stripExt(outputPath),
+          startMs: startTime,
+          endMs: endTime,
+        });
+        setSuccess(`Trimmed file saved to: ${result.outputPath}`);
       }
     } catch (err) {
       setError(`Failed to trim: ${err}`);
-      console.error(err);
     } finally {
       setProcessing(false);
     }
   };
 
   const handleConvert = async () => {
-    if (!file) {
-      setError("No file selected");
-      return;
-    }
-
+    if (!file) return setError("No file selected");
     try {
-      setError(null);
-      setSuccess(null);
-      setProcessing(true);
-
+      setError(null); setSuccess(null); setProcessing(true);
       const outputPath = await save({
         defaultPath: `converted_${Date.now()}.${outputFormat}`,
-        filters: [
-          {
-            name: "Media",
-            extensions: [outputFormat],
-          },
-        ],
+        filters: [{ name: "Media", extensions: [outputFormat] }],
       });
-
       if (outputPath) {
-        await convert(file, outputPath, {
+        const result = await convert({
+          inputPath: file,
+          outputPath: stripExt(outputPath),
           format: outputFormat,
           audioQuality,
           videoQuality,
         });
-        setSuccess(`Converted media saved to: ${outputPath}`);
+        setSuccess(`Converted file saved to: ${result.outputPath}`);
       }
     } catch (err) {
       setError(`Failed to convert: ${err}`);
-      console.error(err);
     } finally {
       setProcessing(false);
     }
   };
 
   const handleExtractAudio = async () => {
-    if (!file) {
-      setError("No file selected");
-      return;
-    }
-
+    if (!file) return setError("No file selected");
     try {
-      setError(null);
-      setSuccess(null);
-      setProcessing(true);
-
+      setError(null); setSuccess(null); setProcessing(true);
       const outputPath = await save({
         defaultPath: `audio_${Date.now()}.mp3`,
-        filters: [
-          {
-            name: "Audio",
-            extensions: ["mp3", "wav", "aac"],
-          },
-        ],
+        filters: [{ name: "Audio", extensions: ["mp3", "wav", "aac"] }],
       });
-
       if (outputPath) {
-        await extractAudio(file, outputPath, audioQuality);
-        setSuccess(`Audio extracted to: ${outputPath}`);
+        const ext = outputPath.split(".").pop() as OutputFormat ?? "mp3";
+        const result = await extractAudio({
+          inputPath: file,
+          outputPath: stripExt(outputPath),
+          format: ext,
+          audioQuality,
+        });
+        setSuccess(`Audio extracted to: ${result.outputPath}`);
       }
     } catch (err) {
       setError(`Failed to extract audio: ${err}`);
-      console.error(err);
     } finally {
       setProcessing(false);
     }
   };
 
   const handlePlay = async () => {
-    if (!file) {
-      setError("No file selected");
-      return;
-    }
-
+    if (!file) return setError("No file selected");
     try {
       setError(null);
       await play({ filePath: file, volume });
-      setSuccess("Playback started (external FFplay)");
     } catch (err) {
       setError(`Playback failed: ${err}`);
-      console.error(err);
     }
   };
 
   const handleStop = async () => {
-    try {
-      setError(null);
-      await stop();
-      setSuccess("Playback stopped");
-    } catch (err) {
-      setError(`Failed to stop: ${err}`);
-      console.error(err);
-    }
+    try { setError(null); await stop(); } catch (err) { setError(`Failed to stop: ${err}`); }
   };
 
+  const isPlaying = playbackStatus?.isPlaying ?? false;
+  const isVideo = mediaInfo?.hasVideo ?? false;
+  const isAudio = (mediaInfo?.hasAudio ?? false) && !isVideo;
+  const duration = mediaInfo?.durationMs ?? 100;
+
   return (
-    <Container maxWidth="md" sx={{ py: { xs: 2, sm: 3, md: 4 } }}>
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 2, sm: 3 },
-          mb: { xs: 2, sm: 3 },
-          borderRadius: 2,
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-          color: "white",
-        }}
-      >
-        <Typography
-          variant="h4"
-          component="h1"
-          sx={{
-            fontSize: { xs: "1.5rem", sm: "2rem", md: "2.125rem" },
-            fontWeight: 700,
-            mb: 1,
-          }}
-        >
-          ✂️ Media Editor Example
-        </Typography>
-        <Typography
-          variant="body2"
-          sx={{
-            fontSize: { xs: "0.875rem", sm: "1rem" },
-            opacity: 0.9,
-            display: { xs: "none", sm: "block" },
-          }}
-        >
-          Test the native Media Editor plugin functionality
-        </Typography>
-      </Paper>
+    <div className="page">
+      <header className="header">
+        <div className="header-inner">
+          <h1 className="header-title">Media Toolkit</h1>
+          <p className="header-subtitle">Tauri Plugin — trim, convert, extract &amp; play</p>
+        </div>
+      </header>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
+      <main className="main">
+        {error && (
+          <div className="alert alert-error">
+            <span>{error}</span>
+            <button className="alert-close" onClick={() => setError(null)}>×</button>
+          </div>
+        )}
+        {success && (
+          <div className="alert alert-success">
+            <span>{success}</span>
+            <button className="alert-close" onClick={() => setSuccess(null)}>×</button>
+          </div>
+        )}
+        {processing && (
+          <div className="alert alert-info">
+            <span className="spinner spinner--dark" />
+            <span>Processing media…</span>
+          </div>
+        )}
 
-      {success && (
-        <Alert
-          severity="success"
-          sx={{ mb: 2 }}
-          onClose={() => setSuccess(null)}
-        >
-          {success}
-        </Alert>
-      )}
-
-      {processing && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <CircularProgress size={20} />
-            <Typography>Processing media...</Typography>
-          </Box>
-        </Alert>
-      )}
-
-      <Stack spacing={{ xs: 2, sm: 3 }}>
-        {/* File Selection */}
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Select Media File
-            </Typography>
-            <Stack spacing={2}>
-              <Button
-                variant="contained"
-                startIcon={<MdFileOpen />}
-                onClick={handleSelectFile}
-                fullWidth
-                sx={{ minHeight: { xs: 48, sm: 44 } }}
-              >
+        {/* File selection */}
+        <div className="card">
+          <h2 className="card-title">Select Media File</h2>
+          <div className="btn-row">
+            <button className="btn btn-primary" onClick={handleOpenDialog}>
+              ↗ Select File
+            </button>
+            <div className="mobile-only-wrap">
+              <button className="btn btn-secondary" onClick={handleSelectFile} disabled title="selectMediaFile() — mobile only">
                 Select File (Plugin)
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<MdFileOpen />}
-                onClick={handleOpenDialog}
-                fullWidth
-                sx={{ minHeight: { xs: 48, sm: 44 } }}
-              >
-                Select File (Dialog)
-              </Button>
-            </Stack>
+              </button>
+              <span className="badge badge--mobile">Mobile only</span>
+            </div>
+          </div>
+          {file && <p className="file-path">{file}</p>}
+        </div>
 
-            {file && (
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Selected file:
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    wordBreak: "break-all",
-                    fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                  }}
-                >
-                  {file}
-                </Typography>
-              </Box>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Media Info */}
+        {/* Media info */}
         {mediaInfo && (
-          <Card>
-            <CardContent>
-              <Box
-                sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
-              >
-                <MdInfo />
-                <Typography variant="h6">Media Information</Typography>
-              </Box>
-
-              <Stack spacing={1}>
-                <Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Format:
-                  </Typography>
-                  <Typography variant="body1">{mediaInfo.format}</Typography>
-                </Box>
-
-                <Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Duration:
-                  </Typography>
-                  <Typography variant="body1">
-                    {formatDuration(mediaInfo.duration)}
-                  </Typography>
-                </Box>
-
-                <Box>
-                  <Typography variant="body2" color="text.secondary">
-                    File Size:
-                  </Typography>
-                  <Typography variant="body1">
-                    {formatFileSize(mediaInfo.fileSize)}
-                  </Typography>
-                </Box>
-
-                {mediaInfo.resolution && (
-                  <Box>
-                    <Typography variant="body2" color="text.secondary">
-                      Resolution:
-                    </Typography>
-                    <Typography variant="body1">
-                      {mediaInfo.resolution.width}x{mediaInfo.resolution.height}
-                    </Typography>
-                  </Box>
-                )}
-
-                {mediaInfo.audioChannels && (
-                  <Box>
-                    <Typography variant="body2" color="text.secondary">
-                      Audio Channels:
-                    </Typography>
-                    <Typography variant="body1">
-                      {mediaInfo.audioChannels}
-                    </Typography>
-                  </Box>
-                )}
-
-                {mediaInfo.sampleRate && (
-                  <Box>
-                    <Typography variant="body2" color="text.secondary">
-                      Sample Rate:
-                    </Typography>
-                    <Typography variant="body1">
-                      {mediaInfo.sampleRate} Hz
-                    </Typography>
-                  </Box>
-                )}
-              </Stack>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Media Preview */}
-        {mediaUrl && mediaInfo && (
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <MdPlayArrow
-                  style={{ verticalAlign: "middle", marginRight: 8 }}
-                />
-                Media Preview
-              </Typography>
-              {mediaInfo.mediaType === "video" ? (
-                <Box sx={{ width: "100%", maxWidth: 640, mx: "auto" }}>
-                  <video
-                    ref={videoRef}
-                    src={mediaUrl}
-                    controls
-                    muted={false}
-                    playsInline
-                    style={{ width: "100%", borderRadius: 8 }}
-                    onLoadedMetadata={() => {
-                      console.log("Video metadata loaded successfully", {
-                        videoWidth: videoRef.current?.videoWidth,
-                        videoHeight: videoRef.current?.videoHeight,
-                        duration: videoRef.current?.duration,
-                      });
-                    }}
-                    onCanPlay={() => {
-                      console.log("Video can play - ready to start");
-                    }}
-                    onError={e => {
-                      console.error("Video error:", e);
-                      console.error("Video error details:", {
-                        error: videoRef.current?.error,
-                        networkState: videoRef.current?.networkState,
-                        readyState: videoRef.current?.readyState,
-                        src: mediaUrl,
-                      });
-                      setError(
-                        `Failed to load video preview. Format: ${mediaInfo.format}. The format may not be supported by the browser.`
-                      );
-                    }}
-                  />
-                </Box>
-              ) : mediaInfo.mediaType === "audio" ? (
-                <Box sx={{ width: "100%", maxWidth: 640, mx: "auto" }}>
-                  <audio
-                    ref={audioRef}
-                    src={mediaUrl}
-                    controls
-                    style={{ width: "100%" }}
-                    onLoadedMetadata={() => {
-                      console.log("Audio metadata loaded successfully", {
-                        duration: audioRef.current?.duration,
-                      });
-                    }}
-                    onCanPlay={() => {
-                      console.log("Audio can play - ready to start");
-                    }}
-                    onError={e => {
-                      console.error("Audio error:", e);
-                      console.error("Audio error details:", {
-                        error: audioRef.current?.error,
-                        networkState: audioRef.current?.networkState,
-                        readyState: audioRef.current?.readyState,
-                        src: mediaUrl,
-                        format: mediaInfo.format,
-                      });
-                      setError(
-                        `Failed to load audio preview. Format: ${mediaInfo.format}. The format may not be supported by the browser.`
-                      );
-                    }}
-                  />
-                </Box>
-              ) : (
-                <Typography color="text.secondary">
-                  Unknown media type - cannot preview
-                </Typography>
+          <div className="card">
+            <h2 className="card-title">Media Information</h2>
+            <div className="info-grid">
+              <div className="info-item">
+                <span className="info-label">Format</span>
+                <span className="info-value">{mediaInfo.format}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Duration</span>
+                <span className="info-value">{formatDuration(mediaInfo.durationMs)}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">File Size</span>
+                <span className="info-value">{formatFileSize(mediaInfo.fileSize)}</span>
+              </div>
+              {mediaInfo.width && mediaInfo.height && (
+                <div className="info-item">
+                  <span className="info-label">Resolution</span>
+                  <span className="info-value">{mediaInfo.width}×{mediaInfo.height}</span>
+                </div>
               )}
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ mt: 1, display: "block" }}
-              >
-                Use the native HTML5 player above for preview. Some formats may
-                not be supported by the browser.
-              </Typography>
-            </CardContent>
-          </Card>
+              {mediaInfo.channels && (
+                <div className="info-item">
+                  <span className="info-label">Channels</span>
+                  <span className="info-value">{mediaInfo.channels}</span>
+                </div>
+              )}
+              {mediaInfo.sampleRate && (
+                <div className="info-item">
+                  <span className="info-label">Sample Rate</span>
+                  <span className="info-value">{mediaInfo.sampleRate} Hz</span>
+                </div>
+              )}
+              {mediaInfo.frameRate && (
+                <div className="info-item">
+                  <span className="info-label">Frame Rate</span>
+                  <span className="info-value">{mediaInfo.frameRate} fps</span>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
-        {/* External Playback */}
-        {file && (
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                <MdPlayArrow
-                  style={{ verticalAlign: "middle", marginRight: 8 }}
+        {/* Preview */}
+        {mediaUrl && mediaInfo && (
+          <div className="card">
+            <h2 className="card-title">Preview</h2>
+            {isVideo ? (
+              <div className="media-preview">
+                <video
+                  ref={videoRef}
+                  src={mediaUrl}
+                  controls
+                  playsInline
+                  onError={() =>
+                    setError(`Failed to load video preview. Format: ${mediaInfo.format}. The format may not be supported by the browser.`)
+                  }
                 />
-                External Playback (FFplay)
-              </Typography>
-              <Stack spacing={2}>
-                <Box>
-                  <Typography variant="body2" gutterBottom>
-                    Volume: {Math.round(volume * 100)}%
-                  </Typography>
-                  <Stack direction="row" spacing={2} alignItems="center">
-                    <MdVolumeUp />
-                    <Slider
-                      value={volume}
-                      onChange={(_, value) => setVolume(value as number)}
-                      min={0}
-                      max={1}
-                      step={0.1}
-                      valueLabelDisplay="auto"
-                      valueLabelFormat={value => `${Math.round(value * 100)}%`}
-                      sx={{ flex: 1 }}
-                    />
-                  </Stack>
-                </Box>
-
-                <Stack direction="row" spacing={2}>
-                  <Button
-                    variant="contained"
-                    startIcon={<MdPlayArrow />}
-                    onClick={handlePlay}
-                    disabled={processing || playbackStatus?.isPlaying}
-                    fullWidth
-                    sx={{ minHeight: { xs: 48, sm: 44 } }}
-                  >
-                    Play
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<MdStop />}
-                    onClick={handleStop}
-                    disabled={!playbackStatus?.isPlaying}
-                    fullWidth
-                    sx={{ minHeight: { xs: 48, sm: 44 } }}
-                  >
-                    Stop
-                  </Button>
-                </Stack>
-
-                {playbackStatus && (
-                  <Alert severity="info" sx={{ mt: 1 }}>
-                    <Typography variant="body2">
-                      Status: {playbackStatus.isPlaying ? "Playing" : "Stopped"}
-                    </Typography>
-                  </Alert>
-                )}
-              </Stack>
-            </CardContent>
-          </Card>
+              </div>
+            ) : isAudio ? (
+              <div className="media-preview">
+                <audio
+                  ref={audioRef}
+                  src={mediaUrl}
+                  controls
+                  onError={() =>
+                    setError(`Failed to load audio preview. Format: ${mediaInfo.format}. The format may not be supported by the browser.`)
+                  }
+                />
+              </div>
+            ) : (
+              <p className="preview-hint">Unknown media type — cannot preview.</p>
+            )}
+            <p className="preview-hint">
+              Native HTML5 preview. Some formats may not be supported by the browser.
+            </p>
+          </div>
         )}
 
-        {/* Trim Controls */}
-        {file && mediaInfo && (
-          <Card>
-            <CardContent>
-              <Box
-                sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
-              >
-                <MdContentCut />
-                <Typography variant="h6">Trim Media</Typography>
-              </Box>
-
-              <Stack spacing={3}>
-                <Box>
-                  <Typography variant="body2" gutterBottom>
-                    Start Time: {formatDuration(startTime)}
-                  </Typography>
-                  <Slider
-                    value={startTime}
-                    onChange={(_, value) => setStartTime(value as number)}
-                    min={0}
-                    max={mediaInfo?.duration || 100}
-                    step={100}
-                    valueLabelDisplay="auto"
-                    valueLabelFormat={formatDuration}
-                  />
-                </Box>
-
-                <Box>
-                  <Typography variant="body2" gutterBottom>
-                    End Time: {formatDuration(endTime)}
-                  </Typography>
-                  <Slider
-                    value={endTime}
-                    onChange={(_, value) => setEndTime(value as number)}
-                    min={0}
-                    max={mediaInfo?.duration || 100}
-                    step={100}
-                    valueLabelDisplay="auto"
-                    valueLabelFormat={formatDuration}
-                  />
-                </Box>
-
-                <Button
-                  variant="contained"
-                  onClick={handleTrim}
-                  disabled={processing || endTime <= startTime}
-                  fullWidth
-                  sx={{ minHeight: { xs: 48, sm: 44 } }}
-                >
-                  Trim Media
-                </Button>
-              </Stack>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Convert Controls */}
+        {/* External playback */}
         {file && (
-          <Card>
-            <CardContent>
-              <Box
-                sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
-              >
-                <MdSwapHoriz />
-                <Typography variant="h6">Convert Format</Typography>
-              </Box>
+          <div className="card">
+            <h2 className="card-title">External Playback</h2>
 
-              <Stack spacing={2}>
-                <FormControl fullWidth>
-                  <InputLabel>Output Format</InputLabel>
-                  <Select
-                    value={outputFormat}
-                    label="Output Format"
-                    onChange={(e: SelectChangeEvent) =>
-                      setOutputFormat(e.target.value as OutputFormat)
-                    }
-                  >
-                    <MenuItem value="mp4">MP4</MenuItem>
-                    <MenuItem value="webm">WebM</MenuItem>
-                    <MenuItem value="mov">MOV</MenuItem>
-                    <MenuItem value="avi">AVI</MenuItem>
-                    <MenuItem value="mp3">MP3</MenuItem>
-                    <MenuItem value="wav">WAV</MenuItem>
-                  </Select>
-                </FormControl>
+            <div className="field">
+              <div className="field-row">
+                <label className="field-label">Volume</label>
+                <span className="field-val">{Math.round(volume * 100)}%</span>
+              </div>
+              <div className="playback-vol">
+                <span style={{ fontSize: 16, color: "var(--text-3)" }}>🔊</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volume}
+                  onChange={(e) => setVolume(Number(e.target.value))}
+                />
+              </div>
+            </div>
 
-                <FormControl fullWidth>
-                  <InputLabel>Audio Quality</InputLabel>
-                  <Select
-                    value={audioQuality}
-                    label="Audio Quality"
-                    onChange={(e: SelectChangeEvent) =>
-                      setAudioQuality(e.target.value as AudioQuality)
-                    }
-                  >
-                    <MenuItem value="low">Low</MenuItem>
-                    <MenuItem value="medium">Medium</MenuItem>
-                    <MenuItem value="high">High</MenuItem>
-                  </Select>
-                </FormControl>
+            <div className="btn-row">
+              <button className="btn btn-primary" onClick={handlePlay} disabled={processing || isPlaying}>
+                ▶ Play
+              </button>
+              <button className="btn btn-secondary" onClick={handleStop} disabled={!isPlaying}>
+                ■ Stop
+              </button>
+            </div>
 
-                {mediaInfo?.resolution && (
-                  <FormControl fullWidth>
-                    <InputLabel>Video Quality</InputLabel>
-                    <Select
-                      value={videoQuality}
-                      label="Video Quality"
-                      onChange={(e: SelectChangeEvent) =>
-                        setVideoQuality(e.target.value as VideoQuality)
-                      }
-                    >
-                      <MenuItem value="low">Low (480p)</MenuItem>
-                      <MenuItem value="medium">Medium (720p)</MenuItem>
-                      <MenuItem value="high">High (1080p)</MenuItem>
-                    </Select>
-                  </FormControl>
-                )}
+            {playbackStatus && (
+              <div className="playback-status">
+                <span className={`status-dot${isPlaying ? " status-dot--playing" : ""}`} />
+                {isPlaying ? "Playing" : "Stopped"}
+              </div>
+            )}
+          </div>
+        )}
 
-                <Button
-                  variant="contained"
-                  onClick={handleConvert}
-                  disabled={processing}
-                  fullWidth
-                  sx={{ minHeight: { xs: 48, sm: 44 } }}
+        {/* Trim */}
+        {file && mediaInfo && (
+          <div className="card">
+            <h2 className="card-title">Trim</h2>
+
+            <div className="field">
+              <div className="field-row">
+                <label className="field-label">Start</label>
+                <span className="field-val">{formatDuration(startTime)}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={duration}
+                step={100}
+                value={startTime}
+                onChange={(e) => setStartTime(Number(e.target.value))}
+              />
+            </div>
+
+            <div className="field">
+              <div className="field-row">
+                <label className="field-label">End</label>
+                <span className="field-val">{formatDuration(endTime)}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={duration}
+                step={100}
+                value={endTime}
+                onChange={(e) => setEndTime(Number(e.target.value))}
+              />
+            </div>
+
+            <button
+              className="btn btn-primary"
+              onClick={handleTrim}
+              disabled={processing || endTime <= startTime}
+            >
+              {processing ? <span className="spinner" /> : "✂ Trim Media"}
+            </button>
+          </div>
+        )}
+
+        {/* Convert */}
+        {file && (
+          <div className="card">
+            <h2 className="card-title">Convert Format</h2>
+
+            <div className="field">
+              <label className="field-label">Output Format</label>
+              <div className="select-wrap">
+                <select
+                  className="select"
+                  value={outputFormat}
+                  onChange={(e) => setOutputFormat(e.target.value as OutputFormat)}
                 >
-                  Convert
-                </Button>
-              </Stack>
-            </CardContent>
-          </Card>
+                  <option value="mp4">MP4</option>
+                  <option value="webm">WebM</option>
+                  <option value="mp3">MP3</option>
+                  <option value="wav">WAV</option>
+                  <option value="aac">AAC</option>
+                  <option value="m4a">M4A</option>
+                  <option value="ogg">OGG</option>
+                  <option value="flac">FLAC</option>
+                </select>
+                <Chevron />
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="field-label">Audio Quality</label>
+              <div className="quality-group">
+                {(["low", "medium", "high"] as AudioQuality[]).map((q) => (
+                  <button
+                    key={q}
+                    className={`quality-btn${audioQuality === q ? " quality-btn--active" : ""}`}
+                    onClick={() => setAudioQuality(q)}
+                  >
+                    {q.charAt(0).toUpperCase() + q.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {mediaInfo?.hasVideo && (
+              <div className="field">
+                <label className="field-label">Video Quality</label>
+                <div className="quality-group">
+                  {([["low", "480p"], ["medium", "720p"], ["high", "1080p"]] as [VideoQuality, string][]).map(
+                    ([q, label]) => (
+                      <button
+                        key={q}
+                        className={`quality-btn${videoQuality === q ? " quality-btn--active" : ""}`}
+                        onClick={() => setVideoQuality(q)}
+                      >
+                        {label}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+
+            <button className="btn btn-primary" onClick={handleConvert} disabled={processing}>
+              {processing ? <span className="spinner" /> : "↔ Convert"}
+            </button>
+          </div>
         )}
 
         {/* Extract Audio */}
-        {file && mediaInfo?.resolution && (
-          <Card>
-            <CardContent>
-              <Box
-                sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
-              >
-                <MdAudiotrack />
-                <Typography variant="h6">Extract Audio</Typography>
-              </Box>
+        {file && mediaInfo?.hasVideo && (
+          <div className="card">
+            <h2 className="card-title">Extract Audio</h2>
 
-              <Stack spacing={2}>
-                <FormControl fullWidth>
-                  <InputLabel>Audio Quality</InputLabel>
-                  <Select
-                    value={audioQuality}
-                    label="Audio Quality"
-                    onChange={(e: SelectChangeEvent) =>
-                      setAudioQuality(e.target.value as AudioQuality)
-                    }
+            <div className="field">
+              <label className="field-label">Audio Quality</label>
+              <div className="quality-group">
+                {(["low", "medium", "high"] as AudioQuality[]).map((q) => (
+                  <button
+                    key={q}
+                    className={`quality-btn${audioQuality === q ? " quality-btn--active" : ""}`}
+                    onClick={() => setAudioQuality(q)}
                   >
-                    <MenuItem value="low">Low</MenuItem>
-                    <MenuItem value="medium">Medium</MenuItem>
-                    <MenuItem value="high">High</MenuItem>
-                  </Select>
-                </FormControl>
+                    {q.charAt(0).toUpperCase() + q.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-                <Button
-                  variant="contained"
-                  onClick={handleExtractAudio}
-                  disabled={processing}
-                  fullWidth
-                  sx={{ minHeight: { xs: 48, sm: 44 } }}
-                >
-                  Extract Audio
-                </Button>
-              </Stack>
-            </CardContent>
-          </Card>
+            <button className="btn btn-primary" onClick={handleExtractAudio} disabled={processing}>
+              {processing ? <span className="spinner" /> : "♪ Extract Audio"}
+            </button>
+          </div>
         )}
-      </Stack>
-    </Container>
+      </main>
+    </div>
   );
 }
 
